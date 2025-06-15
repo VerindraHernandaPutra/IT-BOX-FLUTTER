@@ -1,8 +1,9 @@
 // lib/Screens/my_course_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Import for platform checking
 import '../Models/course.dart';
 import '../services/course_service.dart';
-import '../Services/auth_services.dart';
+import '../services/auth_services.dart';
 import '../Materials/material_screen.dart'; // Adjust path if your MaterialScreen is elsewhere
 
 class MyCourseScreen extends StatefulWidget {
@@ -17,11 +18,12 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
   final CourseService _courseService = CourseService();
   final AuthService _authService = AuthService();
 
+  // Consistent theme colors
   static const Color primaryDark = Color(0xFF131519);
   static const Color surfaceDark = Color(0xFF1E2125);
   static const Color textPrimary = Colors.white;
   static const Color textSecondary = Colors.white70;
-  static const Color textMuted = Colors.white54; // For consistency if needed
+  static const Color textMuted = Colors.white54;
   static const Color accentRed = Color(0xFF680d13);
 
   @override
@@ -33,7 +35,7 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
   Future<void> _loadMyCourses() async {
     String? token = await _authService.getToken();
     if (token != null) {
-      if (mounted) { // Check if the widget is still in the tree
+      if (mounted) {
         setState(() {
           _myCoursesFuture = _courseService.fetchMyEnrolledCourses(token);
         });
@@ -41,7 +43,7 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
     } else {
       if (mounted) {
         setState(() {
-          _myCoursesFuture = Future.value([]); // Show empty list if not logged in
+          _myCoursesFuture = Future.value([]);
         });
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Please login to see your courses.'), backgroundColor: Colors.orangeAccent)
@@ -105,7 +107,19 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
               itemCount: myCourses.length,
               itemBuilder: (context, index) {
                 final course = myCourses[index];
-                String? imageUrl = course.thumbnail; // Assuming API provides full URL
+                String? imageUrl = course.thumbnail;
+
+                // ===================================
+                //  FIX FOR BROKEN IMAGES ON EMULATOR
+                // ===================================
+                // Inside your CourseCard or my_course_screen ListView.builder
+                if (imageUrl != null && imageUrl.isNotEmpty) {
+                  final isAndroidEmulator = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+                  if (isAndroidEmulator) {
+                    // Replace 'localhost' instead of '127.0.0.1'
+                    imageUrl = imageUrl.replaceAll('localhost', '10.0.2.2');
+                  }
+                }
 
                 return Card(
                   color: surfaceDark,
@@ -118,8 +132,8 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
                     children: [
                       if (imageUrl != null && imageUrl.isNotEmpty)
                         Image.network(
-                          imageUrl,
-                          height: 160, // Consistent image height
+                          imageUrl, // Use the corrected URL
+                          height: 160,
                           width: double.infinity,
                           fit: BoxFit.cover,
                           errorBuilder: (ctx, err, st) => Container(
@@ -160,7 +174,7 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (context) => MaterialScreen( // Ensure MaterialScreen is imported
+                                      builder: (context) => MaterialScreen(
                                         courseId: course.id,
                                         courseName: course.courseName,
                                       ),

@@ -7,7 +7,7 @@ class AuthService {
   // TODO: Ensure this URL is correct for your Laravel API backend
   // For Android Emulator connecting to localhost: 'http://10.0.2.2:8000/api'
   // For physical device on same Wi-Fi: 'http://YOUR_COMPUTER_IP:8000/api'
-  final String _apiBaseUrl = 'http://10.0.2.2:8000/api';
+  final String _apiBaseUrl = 'http://10.0.2.2/for_mobapp/public/api';
 
   final _storage = const FlutterSecureStorage();
   static const String _tokenKey = 'auth_token'; // Key for storing the token

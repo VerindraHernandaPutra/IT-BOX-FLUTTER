@@ -5,7 +5,7 @@ import '../Models/course.dart';
 import '../Models/material.dart'; // Ensure this model exists at this path
 
 class CourseService {
-  final String _apiBaseUrl = 'http://10.0.2.2:8000/api'; // TODO: Adjust if needed
+  final String _apiBaseUrl = 'http://10.0.2.2/for_mobapp/public/api'; // TODO: Adjust if needed
 
   Future<List<Course>> fetchCourses() async {
     final response = await http.get(
