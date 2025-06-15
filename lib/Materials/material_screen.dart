@@ -4,7 +4,8 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 import '../Models/material.dart'; // Ensure this path is correct
 import '../services/course_service.dart';
 import '../services/auth_services.dart';
-import '../Quiz/quiz_start_screen.dart'; // Ensure this path is correct
+import '../Quiz/quiz_start_screen.dart';
+import 'package:flutter/services.dart';
 
 class MaterialScreen extends StatefulWidget {
   final int courseId;
