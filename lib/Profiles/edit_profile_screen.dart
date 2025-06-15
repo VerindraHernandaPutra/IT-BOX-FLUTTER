@@ -1,4 +1,5 @@
 // lib/Profiles/edit_profile_screen.dart
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -69,7 +70,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
       return;
     }
-    // Basic email format validation (optional, more robust validation is better)
+    // Basic email format validation
     if (!_titleController.text.contains('@') || !_titleController.text.contains('.')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -79,38 +80,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
 
-
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Call API to update profile
+      // Call the revised API service method, passing the selected image file
       final apiResponse = await _authService.updateUserProfile(
         name: _nameController.text.trim(),
-        email: _titleController.text.trim(), // Email is in _titleController
+        email: _titleController.text.trim(),
+        imageFile: _selectedImage, // Pass the file to the service
       );
 
-      // Extract updated user data from API response if needed, or use local controller text
-      // The API response 'user' object should be the source of truth for what was saved.
-      final Map<String, dynamic>? updatedUserFromApi = apiResponse['user'] as Map<String, dynamic>?;
+      // The API response 'user' object is the source of truth for what was saved.
+      final Map<String, dynamic> updatedUserFromApi = apiResponse['user'];
 
-      String finalName = _nameController.text.trim();
-      String finalEmail = _titleController.text.trim();
-
-      if(updatedUserFromApi != null) {
-        finalName = updatedUserFromApi['name'] ?? finalName;
-        finalEmail = updatedUserFromApi['email'] ?? finalEmail;
-      }
-
-      // Data to return to ProfileScreen
+      // Prepare data to return to ProfileScreen.
+      // We pass back the local image for instant preview and the new server URL.
       final resultData = {
-        'name': finalName,
-        'title': finalEmail, // Email returned as 'title'
-        'image': _selectedImage, // Local image selection (not saved to server in this step)
+        'name': updatedUserFromApi['name'],
+        'title': updatedUserFromApi['email'], // 'title' is what ProfileScreen expects for email
+        'image': _selectedImage,              // The local file for immediate UI update
+        'user_image_url': updatedUserFromApi['user_image_url'], // The new URL from the server
       };
 
       if (mounted) {
+        // Pop the screen and return the result map
         Navigator.pop(context, resultData);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -175,7 +170,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ? FileImage(_selectedImage!)
                         : widget.initialImage != null
                         ? FileImage(widget.initialImage!)
-                        : const AssetImage('assets/images/user.jpg') as ImageProvider,
+                        : const AssetImage('assets/user.jpg') as ImageProvider,
                   ),
                   Container(
                     padding: const EdgeInsets.all(6),

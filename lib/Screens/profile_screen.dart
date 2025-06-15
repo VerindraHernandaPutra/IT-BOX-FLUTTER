@@ -1,14 +1,13 @@
 // lib/Screens/profile_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 
-// TODO: Verify these import paths and THE CLASS NAMES DEFINED IN THOSE FILES
-import '../Profiles/edit_profile_screen.dart'; // Assuming the class is EditProfileScreen
-import '../Logins/login_screen.dart';       // Assuming the class is LoginScreen
-import '../Services/auth_services.dart';   // Assuming your AuthService is here
-import '../Logins/welcome_screen.dart';    // For logout navigation
+import '../Profiles/edit_profile_screen.dart';
+import '../Logins/welcome_screen.dart';
+import '../Services/auth_services.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -18,15 +17,18 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  // Theme and Color Constants
   static const Color primaryDark = Color(0xFF131519);
   static const Color surfaceDark = Color(0xFF1E2125);
   static const Color textPrimary = Colors.white;
   static const Color textSecondary = Colors.white70;
   static const Color accentRed = Color(0xFF680d13);
 
+  // State Variables
   String _userName = 'Loading...';
   String _userEmail = 'loading@example.com';
-  File? _imageFile;
+  String? _userImageUrl; // To store the image URL from the server
+  File? _imageFile;      // For immediate preview after selecting a new image
 
   final AuthService _authService = AuthService();
 
@@ -48,6 +50,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _userName = userData['name'] ?? 'User Name';
           _userEmail = userData['email'] ?? 'user@example.com';
+          // Load the URL from preferences
+          _userImageUrl = userData['user_image_url'];
+
+          // Also load the local file path for fallback/immediate preview
           final String? imagePath = prefs.getString('profile_image_path');
           if (imagePath != null) {
             _imageFile = File(imagePath);
@@ -76,31 +82,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
         builder: (context) => EditProfileScreen(
           initialName: _userName,
           initialTitle: _userEmail,
+          // Pass the local file if it exists, otherwise the logic in EditProfileScreen will handle it
           initialImage: _imageFile,
         ),
       ),
     );
 
+    // This block executes when we return from EditProfileScreen
     if (result != null && mounted) {
       setState(() {
         _userName = result['name'];
         _userEmail = result['title'];
-        _imageFile = result['image'];
-        _saveUserProfileUpdates(name: _userName, email: _userEmail, imageFile: _imageFile);
+        _imageFile = result['image']; // The local file for immediate preview
+        _userImageUrl = result['user_image_url']; // The new URL from the server
+
+        // Save all updated info, including the new URL, back to preferences
+        _saveUserProfileUpdates(
+          name: _userName,
+          email: _userEmail,
+          imageFile: _imageFile,
+          imageUrl: _userImageUrl,
+        );
       });
     }
   }
 
-  Future<void> _saveUserProfileUpdates({required String name, required String email, File? imageFile}) async {
+  Future<void> _saveUserProfileUpdates({
+    required String name,
+    required String email,
+    File? imageFile,
+    String? imageUrl,
+  }) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Save the URL within the main 'user' JSON object for consistency
     final Map<String, dynamic> updatedUserData = {
       'name': name,
       'email': email,
+      'user_image_url': imageUrl, // Save the new URL here
     };
     await prefs.setString('user', jsonEncode(updatedUserData));
+
+    // Persist the local file path for faster loading/preview across app restarts
     if (imageFile != null) {
       await prefs.setString('profile_image_path', imageFile.path);
     } else {
+      // If the image was removed, clear the path
       await prefs.remove('profile_image_path');
     }
   }
@@ -109,13 +136,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await _authService.logout();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('user');
-      await prefs.remove('profile_image_path');
+      await prefs.clear(); // Clear all data on logout for a clean slate
 
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (context) => const WelcomeScreen()), // Navigate to WelcomeScreen
+          MaterialPageRoute(builder: (context) => const WelcomeScreen()),
               (Route<dynamic> route) => false,
         );
       }
@@ -134,19 +160,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // New method to show the About Us dialog
   void _showAboutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          backgroundColor: surfaceDark, // Dark background for the dialog
+          backgroundColor: surfaceDark,
           title: const Text(
             'About ITCOURSE',
             style: TextStyle(color: textPrimary, fontWeight: FontWeight.bold),
           ),
-          content: const SingleChildScrollView( // Makes content scrollable if it's too long
-            child: ListBody( // Use ListBody for multiple text paragraphs
+          content: const SingleChildScrollView(
+            child: ListBody(
               children: <Widget>[
                 Text(
                   'ITCOURSE is your premier platform for learning cutting-edge IT skills.',
@@ -159,7 +184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 SizedBox(height: 10),
                 Text(
-                  'Version: 1.0.0\nDeveloped by Kelompok 5.', // Example version info
+                  'Version: 1.0.0\nDeveloped by Kelompok 5.',
                   style: TextStyle(color: Colors.grey, fontSize: 13),
                 ),
               ],
@@ -169,11 +194,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             TextButton(
               child: const Text('Close', style: TextStyle(color: accentRed, fontWeight: FontWeight.bold)),
               onPressed: () {
-                Navigator.of(context).pop(); // Dismiss the dialog
+                Navigator.of(context).pop();
               },
             ),
           ],
-          shape: RoundedRectangleBorder( // Optional: give the dialog rounded corners
+          shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12.0)
           ),
         );
@@ -181,12 +206,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     ImageProvider<Object> profileImageProvider;
+
+    // This logic determines which image to show, in order of priority:
+    // 1. A new image just selected locally (for instant preview).
+    // 2. The image URL from the server.
+    // 3. The default placeholder image.
     if (_imageFile != null) {
       profileImageProvider = FileImage(_imageFile!);
+    } else if (_userImageUrl != null && _userImageUrl!.isNotEmpty) {
+      profileImageProvider = NetworkImage(_userImageUrl!);
     } else {
       profileImageProvider = const AssetImage('assets/user.jpg');
     }
@@ -196,7 +227,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            Stack( /* ... Your existing Stack for profile header ... */
+            Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
@@ -250,7 +281,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
             const SizedBox(height: 100),
-            const Padding( /* ... Your "My Activity" section ... */
+            const Padding(
               padding: EdgeInsets.symmetric(horizontal: 20.0),
               child: Align(
                 alignment: Alignment.centerLeft,
@@ -265,7 +296,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 15),
-            Padding( /* ... Your stats Row ... */
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -279,7 +310,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 40),
-            ElevatedButton( /* ... Your Edit Profile Button ... */
+            ElevatedButton(
               onPressed: _navigateToEditProfile,
               style: ElevatedButton.styleFrom(
                 backgroundColor: accentRed,
@@ -300,16 +331,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 15),
             _buildMenuButton(
               context: context,
-              iconAsset: 'assets/about_us_icon.png',
+              iconAsset: 'assets/about_us_icon.png', // Make sure this asset exists
               label: 'About Us',
               onPressed: () {
-                _showAboutDialog(context); // <<< CALLING THE NEW DIALOG METHOD
+                _showAboutDialog(context);
               },
             ),
             const SizedBox(height: 10),
             _buildMenuButton(
               context: context,
-              iconAsset: 'assets/logout_icon.png',
+              iconAsset: 'assets/logout_icon.png', // Make sure this asset exists
               label: 'Logout',
               onPressed: _logout,
               isLogout: true,
@@ -321,7 +352,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildStatSeparator() { /* ... Your _buildStatSeparator method ... */
+  Widget _buildStatSeparator() {
     return Container(
       height: 40,
       width: 1,
@@ -329,7 +360,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Column _buildStatColumn(String value, String label) { /* ... Your _buildStatColumn method ... */
+  Column _buildStatColumn(String value, String label) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -346,7 +377,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildMenuButton({ /* ... Your _buildMenuButton method ... */
+  Widget _buildMenuButton({
     required BuildContext context,
     required String iconAsset,
     required String label,

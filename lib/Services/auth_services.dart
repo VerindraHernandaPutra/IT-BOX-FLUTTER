@@ -1,5 +1,7 @@
 // lib/Services/auth_services.dart
+
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -7,7 +9,7 @@ class AuthService {
   // TODO: Ensure this URL is correct for your Laravel API backend
   // For Android Emulator connecting to localhost: 'http://10.0.2.2:8000/api'
   // For physical device on same Wi-Fi: 'http://YOUR_COMPUTER_IP:8000/api'
-  final String _apiBaseUrl = 'http://192.168.18.7:8000/api';
+  final String _apiBaseUrl = 'http://192.168.18.83:8000/api';
 
   final _storage = const FlutterSecureStorage();
   static const String _tokenKey = 'auth_token'; // Key for storing the token
@@ -128,42 +130,52 @@ class AuthService {
     }
   }
 
-  // --- User Profile Update Method ---
+  // --- REVISED User Profile Update Method ---
   Future<Map<String, dynamic>> updateUserProfile({
     required String name,
     required String email,
-    // Note: Image upload would typically be a separate method using multipart/form-data
+    File? imageFile, // Accept the image file
   }) async {
     String? token = await getToken();
     if (token == null) {
       throw Exception('User not authenticated. Please log in again.');
     }
 
-    final response = await http.put( // Using PUT as defined in Laravel API route
-      Uri.parse('$_apiBaseUrl/user/profile'),
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Accept': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode(<String, String>{
-        'name': name,
-        'email': email,
-        // If you were to add password update:
-        // 'current_password': currentPassword,
-        // 'new_password': newPassword,
-        // 'new_password_confirmation': newPasswordConfirmation,
-      }),
-    );
+    // The endpoint for updating the profile. Your api.php uses POST for this route.
+    final uri = Uri.parse('$_apiBaseUrl/user/profile');
 
+    // Use MultipartRequest for requests that include files.
+    var request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $token'
+      ..headers['Accept'] = 'application/json';
+
+    // Add the text-based fields.
+    request.fields['name'] = name;
+    request.fields['email'] = email;
+
+    // Add the image file to the request if it exists.
+    if (imageFile != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'user_image', // This field name MUST match the key in your Laravel controller.
+          imageFile.path,
+        ),
+      );
+    }
+
+    // Send the request and wait for the response.
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
     final responseBody = jsonDecode(response.body);
+
+    // Check the status code and handle the response.
     if (response.statusCode == 200) {
       // Expecting Laravel to return { "message": "...", "user": { ...updated user data... } }
       return responseBody;
     } else {
+      // Handle errors, including validation errors from Laravel.
       String errorMessage = responseBody['message'] ?? 'Failed to update profile.';
       if (responseBody['errors'] != null && responseBody['errors'] is Map) {
-        // Concatenate Laravel validation errors
         errorMessage = (responseBody['errors'] as Map).entries.map((entry) {
           final errors = entry.value;
           if (errors is List) {
