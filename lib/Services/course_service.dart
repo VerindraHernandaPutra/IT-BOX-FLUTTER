@@ -4,12 +4,13 @@ import 'package:http/http.dart' as http;
 import '../Models/course.dart';
 import '../Models/material.dart'; // Ensure this model exists at this path
 import '../Models/quiz_question.dart'; // Ensure this model exists at this path
+import 'dart:typed_data';
 
 class CourseService {
   // TODO: Make sure this URL is correct for your Laravel API backend
   // For Android Emulator connecting to localhost: 'http://10.0.2.2/your_laravel_folder/public/api'
   // Or if using `php artisan serve`: 'http://10.0.2.2:8000/api'
-  final String _apiBaseUrl = 'http://10.0.2.2/for_mobapp/public/api';
+  final String _apiBaseUrl = 'http://192.168.18.7:8000/api';
 
   // --- Course and Material Methods ---
 
@@ -170,6 +171,46 @@ class CourseService {
     } else {
       print('Failed to submit quiz. Status: ${response.statusCode}, Body: ${response.body}');
       throw Exception(responseBody['message'] ?? 'Failed to submit quiz.');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUserCertificates(String token) async {
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/user/certificates'),
+      headers: <String, String>{
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      if (decoded['data'] is List) {
+        return List<Map<String, dynamic>>.from(decoded['data']);
+      } else {
+        throw Exception('Unexpected format for certificates data.');
+      }
+    } else {
+      throw Exception('Failed to fetch user certificates. Status: ${response.statusCode}');
+    }
+  }
+
+  Future<Uint8List> downloadCertificatePdf(int certificateId, String token) async {
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/certificates/$certificateId/download-pdf'),
+      headers: <String, String>{
+        'Accept': 'application/pdf',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return response.bodyBytes; // You can use this to save to file, open in viewer, etc.
+    } else if (response.statusCode == 403) {
+      throw Exception('You are not authorized to access this certificate.');
+    } else {
+      throw Exception('Failed to download certificate PDF. Status: ${response.statusCode}');
     }
   }
 }
