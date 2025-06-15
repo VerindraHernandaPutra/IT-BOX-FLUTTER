@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../Models/course.dart';
 import '../services/course_service.dart';
+import '../services/auth_services.dart'; // Import AuthService to get the token
 
 class CourseScreen extends StatefulWidget {
   const CourseScreen({super.key});
@@ -12,8 +13,10 @@ class CourseScreen extends StatefulWidget {
 }
 
 class _CourseScreenState extends State<CourseScreen> {
-  late Future<List<Course>> _coursesFuture;
+  Future<List<dynamic>>? _dataFuture;
   final CourseService _courseService = CourseService();
+  final AuthService _authService = AuthService();
+  Set<int> _enrolledIds = {};
 
   static const Color primaryDark = Color(0xFF131519);
   static const Color surfaceDark = Color(0xFF1E2125);
@@ -24,13 +27,34 @@ class _CourseScreenState extends State<CourseScreen> {
   @override
   void initState() {
     super.initState();
-    _coursesFuture = _courseService.fetchCourses();
+    _loadInitialData();
+  }
+
+  Future<void> _loadInitialData() async {
+    String? token = await _authService.getToken();
+    if (mounted) {
+      setState(() {
+        _dataFuture = Future.wait([
+          _courseService.fetchCourses(),
+          token != null ? _courseService.fetchEnrolledCourseIds(token) : Future.value(<int>{}),
+        ]);
+      });
+    }
   }
 
   void _refreshCourses() {
-    setState(() {
-      _coursesFuture = _courseService.fetchCourses();
-    });
+    _loadInitialData();
+  }
+
+  void _updateEnrollmentStatus(int courseId) {
+    if (mounted) {
+      setState(() {
+        _enrolledIds.add(courseId);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enrollment successful!'), backgroundColor: Colors.green)
+      );
+    }
   }
 
   @override
@@ -50,41 +74,19 @@ class _CourseScreenState extends State<CourseScreen> {
         ],
       ),
       backgroundColor: primaryDark,
-      body: FutureBuilder<List<Course>>(
-        future: _coursesFuture,
+      body: FutureBuilder<List<dynamic>>(
+        future: _dataFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: accentRed));
           } else if (snapshot.hasError) {
-            return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child:
-                  Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text(
-                      'Failed to load courses: ${snapshot.error.toString().split(':').skip(1).join(':').trim()}',
-                      style: const TextStyle(color: textSecondary, fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                        icon: const Icon(Icons.refresh_rounded),
-                        label: const Text('Try Again'),
-                        onPressed: _refreshCourses,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: surfaceDark,
-                          foregroundColor: textPrimary,
-                        ))
-                  ]),
-                ));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
-                child: Text(
-                  'No courses available at the moment.',
-                  style: TextStyle(fontSize: 18, color: textSecondary),
-                ));
+            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+          } else if (!snapshot.hasData || snapshot.data == null) {
+            return const Center(child: Text('No data available.', style: TextStyle(color: textSecondary)));
           } else {
-            final List<Course> courses = snapshot.data!;
+            final List<Course> courses = snapshot.data![0] as List<Course>;
+            _enrolledIds = snapshot.data![1] as Set<int>;
+
             return LayoutBuilder(
               builder: (BuildContext layoutContext, BoxConstraints constraints) {
                 int crossAxisCount;
@@ -95,8 +97,8 @@ class _CourseScreenState extends State<CourseScreen> {
                   childAspectRatio = 0.8;
                 } else if (constraints.maxWidth < 720) {
                   crossAxisCount = 2;
-                  // Giving it slightly more height to accommodate two-line titles reliably
-                  childAspectRatio = 0.76; // <<< ADJUSTED THIS VALUE
+                  // Final adjustment to give just enough height to prevent the small overflow.
+                  childAspectRatio = 0.75; // <<< FINAL ADJUSTMENT
                 } else {
                   crossAxisCount = 3;
                   childAspectRatio = 0.78;
@@ -112,7 +114,12 @@ class _CourseScreenState extends State<CourseScreen> {
                   ),
                   itemCount: courses.length,
                   itemBuilder: (BuildContext itemContext, int index) {
-                    return CourseCard(course: courses[index]);
+                    final course = courses[index];
+                    return CourseCard(
+                      course: course,
+                      isInitiallyEnrolled: _enrolledIds.contains(course.id),
+                      onEnrollSuccess: () => _updateEnrollmentStatus(course.id),
+                    );
                   },
                 );
               },
@@ -124,29 +131,95 @@ class _CourseScreenState extends State<CourseScreen> {
   }
 }
 
-class CourseCard extends StatelessWidget {
+class CourseCard extends StatefulWidget {
   final Course course;
+  final bool isInitiallyEnrolled;
+  final VoidCallback onEnrollSuccess;
+
+  const CourseCard({
+    super.key,
+    required this.course,
+    required this.isInitiallyEnrolled,
+    required this.onEnrollSuccess,
+  });
+
+  @override
+  State<CourseCard> createState() => _CourseCardState();
+}
+
+class _CourseCardState extends State<CourseCard> {
+  bool _isEnrolled = false;
+  bool _isEnrolling = false;
+
+  final CourseService _courseService = CourseService();
+  final AuthService _authService = AuthService();
 
   static const Color surfaceDark = Color(0xFF1E2125);
   static const Color textPrimary = Colors.white;
   static const Color textSecondary = Colors.white70;
   static const Color textMuted = Colors.white54;
   static const Color accentRed = Color(0xFF680d13);
+  static const Color enrolledColor = Colors.green;
 
-  const CourseCard({super.key, required this.course});
+  @override
+  void initState() {
+    super.initState();
+    _isEnrolled = widget.isInitiallyEnrolled;
+  }
+
+  @override
+  void didUpdateWidget(covariant CourseCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isInitiallyEnrolled != oldWidget.isInitiallyEnrolled) {
+      setState(() {
+        _isEnrolled = widget.isInitiallyEnrolled;
+      });
+    }
+  }
+
+  Future<void> _handleEnroll() async {
+    setState(() { _isEnrolling = true; });
+
+    final token = await _authService.getToken();
+    if (token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please log in to enroll.'), backgroundColor: Colors.orangeAccent)
+      );
+      if(mounted) setState(() { _isEnrolling = false; });
+      return;
+    }
+
+    try {
+      await _courseService.enrollInCourse(widget.course.id, token);
+      if (mounted) {
+        setState(() { _isEnrolled = true; });
+        widget.onEnrollSuccess();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Enrollment failed: ${e.toString().replaceFirst("Exception: ", "")}'), backgroundColor: Colors.redAccent)
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() { _isEnrolling = false; });
+      }
+    }
+  }
 
   Widget _buildDetailRow({required IconData icon, required String label, required String value}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
+      padding: const EdgeInsets.only(bottom: 3.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 13, color: textMuted),
+          Icon(icon, size: 12, color: textMuted),
           const SizedBox(width: 5),
           Text(
             '$label: ',
             style: const TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 color: textMuted,
                 fontWeight: FontWeight.w500),
           ),
@@ -154,10 +227,10 @@ class CourseCard extends StatelessWidget {
             child: Text(
               value,
               style: const TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 11,
                   color: textSecondary,
                   fontWeight: FontWeight.normal),
-              softWrap: false, // Prevents wrapping that might increase height
+              softWrap: false,
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -168,8 +241,8 @@ class CourseCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String? imageUrl = course.thumbnail;
-    String priceText = course.courseType.toLowerCase() == 'free' ? 'Gratis' : 'Rp ${course.coursePrice}';
+    String? imageUrl = widget.course.thumbnail;
+    String priceText = widget.course.courseType.toLowerCase() == 'free' ? 'Gratis' : 'Rp ${widget.course.coursePrice}';
 
     if (imageUrl != null && imageUrl.isNotEmpty) {
       final isAndroidEmulator = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -186,11 +259,10 @@ class CourseCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // Thumbnail
           Expanded(
-            flex: 5, // Image gets 5 parts of height
+            flex: 6,
             child: (imageUrl != null && imageUrl.isNotEmpty)
-                ? Image.network( /* ... same Image.network code ... */
+                ? Image.network(
               imageUrl,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[850], child: const Center(child: Icon(Icons.broken_image_outlined, color: textMuted, size: 36))),
@@ -201,40 +273,34 @@ class CourseCard extends StatelessWidget {
             )
                 : Container(color: Colors.grey[850], child: const Center(child: Icon(Icons.image_not_supported_outlined, color: textMuted, size: 36))),
           ),
-          // Content Area
           Expanded(
-            flex: 5, // Text area also gets 5 parts of height
+            flex: 5,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween, // This works well if content is compact
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: <Widget>[
-                  // Top content (Title and details)
-                  // Wrapped title in Flexible to allow it to shrink if needed.
-                  Flexible(
-                    child: Text(
-                      course.courseName,
-                      style: const TextStyle(
-                        fontSize: 14.0,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimary,
-                        height: 1.2, // Reduced line height
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-
-                  // Details
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
+                      Text(
+                        widget.course.courseName,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.bold,
+                          color: textPrimary,
+                          height: 1.15,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       const SizedBox(height: 4.0),
                       _buildDetailRow(
                           icon: Icons.timer_outlined,
                           label: "Durasi",
-                          value: "${course.courseHour} jam"
+                          value: "${widget.course.courseHour} jam"
                       ),
                       _buildDetailRow(
                           icon: Icons.sell_outlined,
@@ -243,25 +309,29 @@ class CourseCard extends StatelessWidget {
                       ),
                     ],
                   ),
-
-                  // Enroll Button
                   Align(
                     alignment: Alignment.centerRight,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        // TODO: Implement enroll logic
-                        print('Enroll button pressed for ${course.courseName}');
-                      },
+                    child: _isEnrolling
+                        ? const SizedBox(
+                      height: 20, width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.0, color: accentRed),
+                    )
+                        : ElevatedButton(
+                      onPressed: _isEnrolled ? null : _handleEnroll,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: accentRed,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        backgroundColor: _isEnrolled ? enrolledColor : accentRed,
+                        disabledBackgroundColor: enrolledColor.withOpacity(0.6),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8.0),
                         ),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: const Text('Enroll', style: TextStyle(color: textPrimary)),
+                      child: Text(
+                          _isEnrolled ? 'Enrolled' : 'Enroll',
+                          style: const TextStyle(color: textPrimary)
+                      ),
                     ),
                   ),
                 ],
