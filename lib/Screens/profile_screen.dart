@@ -24,20 +24,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
   static const Color textSecondary = Colors.white70;
   static const Color accentRed = Color(0xFF680d13);
 
-  // State Variables
+  // State Variables for User Profile
   String _userName = 'Loading...';
   String _userEmail = 'loading@example.com';
-  String? _userImageUrl; // To store the image URL from the server
-  File? _imageFile;      // For immediate preview after selecting a new image
+  String? _userImageUrl;
+  File? _imageFile;
+
+  // State Variables for Activity Stats
+  bool _isLoadingStats = true;
+  int _incompleteCount = 0;
+  int _completedCount = 0;
+  int _certificatesCount = 0;
 
   final AuthService _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
+    // Load both user profile and activity stats when the screen initializes
     _loadUserProfile();
+    _loadActivityStats();
   }
 
+  Future<void> _loadActivityStats() async {
+    if (!mounted) return;
+    try {
+      final stats = await _authService.getActivityStats();
+      setState(() {
+        _incompleteCount = stats['incomplete'] ?? 0;
+        _completedCount = stats['completed'] ?? 0;
+        _certificatesCount = stats['certificates'] ?? 0;
+        _isLoadingStats = false;
+      });
+    } catch (e) {
+      print("Failed to load stats: $e");
+      if (mounted) {
+        setState(() {
+          _isLoadingStats = false; // Stop loading even if there's an error
+        });
+      }
+    }
+  }
+
+  // --- All your other methods like _loadUserProfile, _navigateToEditProfile, _logout, etc. remain here ---
   Future<void> _loadUserProfile() async {
     final prefs = await SharedPreferences.getInstance();
     final String? userDataString = prefs.getString('user');
@@ -50,10 +79,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _userName = userData['name'] ?? 'User Name';
           _userEmail = userData['email'] ?? 'user@example.com';
-          // Load the URL from preferences
           _userImageUrl = userData['user_image_url'];
-
-          // Also load the local file path for fallback/immediate preview
           final String? imagePath = prefs.getString('profile_image_path');
           if (imagePath != null) {
             _imageFile = File(imagePath);
@@ -82,21 +108,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         builder: (context) => EditProfileScreen(
           initialName: _userName,
           initialTitle: _userEmail,
-          // Pass the local file if it exists, otherwise the logic in EditProfileScreen will handle it
           initialImage: _imageFile,
         ),
       ),
     );
 
-    // This block executes when we return from EditProfileScreen
     if (result != null && mounted) {
       setState(() {
         _userName = result['name'];
         _userEmail = result['title'];
-        _imageFile = result['image']; // The local file for immediate preview
-        _userImageUrl = result['user_image_url']; // The new URL from the server
+        _imageFile = result['image'];
+        _userImageUrl = result['user_image_url'];
 
-        // Save all updated info, including the new URL, back to preferences
         _saveUserProfileUpdates(
           name: _userName,
           email: _userEmail,
@@ -114,20 +137,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? imageUrl,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-
-    // Save the URL within the main 'user' JSON object for consistency
     final Map<String, dynamic> updatedUserData = {
       'name': name,
       'email': email,
-      'user_image_url': imageUrl, // Save the new URL here
+      'user_image_url': imageUrl,
     };
     await prefs.setString('user', jsonEncode(updatedUserData));
-
-    // Persist the local file path for faster loading/preview across app restarts
     if (imageFile != null) {
       await prefs.setString('profile_image_path', imageFile.path);
     } else {
-      // If the image was removed, clear the path
       await prefs.remove('profile_image_path');
     }
   }
@@ -136,7 +154,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       await _authService.logout();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.clear(); // Clear all data on logout for a clean slate
+      await prefs.clear();
 
       if (mounted) {
         Navigator.pushAndRemoveUntil(
@@ -206,14 +224,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     ImageProvider<Object> profileImageProvider;
-
-    // This logic determines which image to show, in order of priority:
-    // 1. A new image just selected locally (for instant preview).
-    // 2. The image URL from the server.
-    // 3. The default placeholder image.
     if (_imageFile != null) {
       profileImageProvider = FileImage(_imageFile!);
     } else if (_userImageUrl != null && _userImageUrl!.isNotEmpty) {
@@ -227,6 +241,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            // Your Profile Header Stack remains the same...
             Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.center,
@@ -296,20 +311,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 15),
+
+            // =======================================================
+            // MODIFIED "My Activity" SECTION
+            // =======================================================
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _buildStatColumn('3', 'In Progress'),
+                  // Show a loading indicator or the actual count
+                  _isLoadingStats
+                      ? const CircularProgressIndicator(color: textPrimary, strokeWidth: 2)
+                      : _buildStatColumn(_incompleteCount.toString(), 'Incomplete'),
+
                   _buildStatSeparator(),
-                  _buildStatColumn('0', 'Completed'),
+
+                  _isLoadingStats
+                      ? const CircularProgressIndicator(color: textPrimary, strokeWidth: 2)
+                      : _buildStatColumn(_completedCount.toString(), 'Completed'),
+
                   _buildStatSeparator(),
-                  _buildStatColumn('2', 'Certificates'),
+
+                  _isLoadingStats
+                      ? const CircularProgressIndicator(color: textPrimary, strokeWidth: 2)
+                      : _buildStatColumn(_certificatesCount.toString(), 'Certificate'),
                 ],
               ),
             ),
+            // =======================================================
+
             const SizedBox(height: 40),
+            // The rest of your UI (buttons, etc.) remains the same
             ElevatedButton(
               onPressed: _navigateToEditProfile,
               style: ElevatedButton.styleFrom(
@@ -331,7 +364,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 15),
             _buildMenuButton(
               context: context,
-              iconAsset: 'assets/about_us_icon.png', // Make sure this asset exists
+              iconAsset: 'assets/about_us_icon.png',
               label: 'About Us',
               onPressed: () {
                 _showAboutDialog(context);
@@ -340,7 +373,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 10),
             _buildMenuButton(
               context: context,
-              iconAsset: 'assets/logout_icon.png', // Make sure this asset exists
+              iconAsset: 'assets/logout_icon.png',
               label: 'Logout',
               onPressed: _logout,
               isLogout: true,
@@ -351,6 +384,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
   }
+
+  // --- Helper Widgets ---
 
   Widget _buildStatSeparator() {
     return Container(

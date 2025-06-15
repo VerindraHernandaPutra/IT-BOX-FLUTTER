@@ -188,4 +188,25 @@ class AuthService {
       throw Exception(errorMessage);
     }
   }
+
+  Future<Map<String, dynamic>> getActivityStats() async {
+    String? token = await getToken();
+    if (token == null) {
+      throw Exception('User not authenticated.');
+    }
+
+    final response = await http.get(
+      Uri.parse('$_apiBaseUrl/user/activity-stats'),
+      headers: <String, String>{
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load activity stats.');
+    }
+  }
 }
