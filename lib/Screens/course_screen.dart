@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../Models/course.dart';
 import '../services/course_service.dart';
-import '../services/auth_services.dart'; // Import AuthService to get the token
+import '../services/auth_services.dart';
 
 class CourseScreen extends StatefulWidget {
   const CourseScreen({super.key});
@@ -36,23 +36,21 @@ class _CourseScreenState extends State<CourseScreen> {
       setState(() {
         _dataFuture = Future.wait([
           _courseService.fetchCourses(),
-          token != null ? _courseService.fetchEnrolledCourseIds(token) : Future.value(<int>{}),
+          token != null
+              ? _courseService.fetchEnrolledCourseIds(token)
+              : Future.value(<int>{}),
         ]);
       });
     }
   }
 
-  void _refreshCourses() {
-    _loadInitialData();
-  }
+  void _refreshCourses() => _loadInitialData();
 
   void _updateEnrollmentStatus(int courseId) {
     if (mounted) {
-      setState(() {
-        _enrolledIds.add(courseId);
-      });
+      setState(() => _enrolledIds.add(courseId));
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enrollment successful!'), backgroundColor: Colors.green)
+        const SnackBar(content: Text('Enrollment successful!'), backgroundColor: Colors.green),
       );
     }
   }
@@ -63,8 +61,7 @@ class _CourseScreenState extends State<CourseScreen> {
       appBar: AppBar(
         title: const Text('All Courses'),
         backgroundColor: surfaceDark,
-        titleTextStyle: const TextStyle(
-            color: textPrimary, fontSize: 20, fontWeight: FontWeight.bold),
+        titleTextStyle: const TextStyle(color: textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: textPrimary),
@@ -81,50 +78,44 @@ class _CourseScreenState extends State<CourseScreen> {
             return const Center(child: CircularProgressIndicator(color: accentRed));
           } else if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
-          } else if (!snapshot.hasData || snapshot.data == null) {
+          } else if (!snapshot.hasData) {
             return const Center(child: Text('No data available.', style: TextStyle(color: textSecondary)));
-          } else {
-            final List<Course> courses = snapshot.data![0] as List<Course>;
-            _enrolledIds = snapshot.data![1] as Set<int>;
-
-            return LayoutBuilder(
-              builder: (BuildContext layoutContext, BoxConstraints constraints) {
-                int crossAxisCount;
-                double childAspectRatio;
-
-                if (constraints.maxWidth < 400) {
-                  crossAxisCount = 1;
-                  childAspectRatio = 0.8;
-                } else if (constraints.maxWidth < 720) {
-                  crossAxisCount = 2;
-                  // Final adjustment to give just enough height to prevent the small overflow.
-                  childAspectRatio = 0.75; // <<< FINAL ADJUSTMENT
-                } else {
-                  crossAxisCount = 3;
-                  childAspectRatio = 0.78;
-                }
-
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12.0),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12.0,
-                    mainAxisSpacing: 12.0,
-                    childAspectRatio: childAspectRatio,
-                  ),
-                  itemCount: courses.length,
-                  itemBuilder: (BuildContext itemContext, int index) {
-                    final course = courses[index];
-                    return CourseCard(
-                      course: course,
-                      isInitiallyEnrolled: _enrolledIds.contains(course.id),
-                      onEnrollSuccess: () => _updateEnrollmentStatus(course.id),
-                    );
-                  },
-                );
-              },
-            );
           }
+
+          final courses = snapshot.data![0] as List<Course>;
+          _enrolledIds = snapshot.data![1] as Set<int>;
+
+          return LayoutBuilder(builder: (context, constraints) {
+            int crossCount;
+            double aspect;
+
+            if (constraints.maxWidth < 400) {
+              crossCount = 1;
+              aspect = 0.8;
+            } else if (constraints.maxWidth < 720) {
+              crossCount = 2;
+              aspect = 0.75;
+            } else {
+              crossCount = 3;
+              aspect = 0.78;
+            }
+
+            return GridView.builder(
+              padding: const EdgeInsets.all(12),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossCount,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: aspect,
+              ),
+              itemCount: courses.length,
+              itemBuilder: (ctx, i) => CourseCard(
+                course: courses[i],
+                isInitiallyEnrolled: _enrolledIds.contains(courses[i].id),
+                onEnrollSuccess: () => _updateEnrollmentStatus(courses[i].id),
+              ),
+            );
+          });
         },
       ),
     );
@@ -171,68 +162,43 @@ class _CourseCardState extends State<CourseCard> {
   void didUpdateWidget(covariant CourseCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.isInitiallyEnrolled != oldWidget.isInitiallyEnrolled) {
-      setState(() {
-        _isEnrolled = widget.isInitiallyEnrolled;
-      });
+      setState(() => _isEnrolled = widget.isInitiallyEnrolled);
     }
   }
 
   Future<void> _handleEnroll() async {
-    setState(() { _isEnrolling = true; });
-
+    setState(() => _isEnrolling = true);
     final token = await _authService.getToken();
     if (token == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please log in to enroll.'), backgroundColor: Colors.orangeAccent)
+        const SnackBar(content: Text('Please log in to enroll.'), backgroundColor: Colors.orangeAccent),
       );
-      if(mounted) setState(() { _isEnrolling = false; });
+      setState(() => _isEnrolling = false);
       return;
     }
-
     try {
       await _courseService.enrollInCourse(widget.course.id, token);
-      if (mounted) {
-        setState(() { _isEnrolled = true; });
-        widget.onEnrollSuccess();
-      }
+      setState(() => _isEnrolled = true);
+      widget.onEnrollSuccess();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Enrollment failed: ${e.toString().replaceFirst("Exception: ", "")}'), backgroundColor: Colors.redAccent)
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Enrollment failed: ${e.toString()}'), backgroundColor: Colors.redAccent),
+      );
     } finally {
-      if (mounted) {
-        setState(() { _isEnrolling = false; });
-      }
+      setState(() => _isEnrolling = false);
     }
   }
 
-  Widget _buildDetailRow({required IconData icon, required String label, required String value}) {
+  Widget _buildDetailRow(IconData icon, String label, String value, double fontSize) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 3.0),
+      padding: const EdgeInsets.only(bottom: 3),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 12, color: textMuted),
+          Icon(icon, size: fontSize * .9, color: textMuted),
           const SizedBox(width: 5),
-          Text(
-            '$label: ',
-            style: const TextStyle(
-                fontSize: 11,
-                color: textMuted,
-                fontWeight: FontWeight.w500),
-          ),
+          Text('$label: ', style: TextStyle(fontSize: fontSize, color: textMuted, fontWeight: FontWeight.w600)),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: textSecondary,
-                  fontWeight: FontWeight.normal),
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(value, style: TextStyle(fontSize: fontSize, color: textSecondary), overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
@@ -241,105 +207,93 @@ class _CourseCardState extends State<CourseCard> {
 
   @override
   Widget build(BuildContext context) {
-    String? imageUrl = widget.course.thumbnail;
-    String priceText = widget.course.courseType.toLowerCase() == 'free' ? 'Gratis' : 'Rp ${widget.course.coursePrice}';
-
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      final isAndroidEmulator = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-      if (isAndroidEmulator) {
-        imageUrl = imageUrl.replaceAll('127.0.0.1', '10.0.2.2').replaceAll('localhost', '10.0.2.2');
-      }
+    String? img = widget.course.thumbnail;
+    if (img != null && img.isNotEmpty && defaultTargetPlatform == TargetPlatform.android) {
+      img = img.replaceAll('127.0.0.1', '10.0.2.2').replaceAll('localhost', '10.0.2.2');
     }
 
-    return Card(
-      color: surfaceDark,
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            flex: 6,
-            child: (imageUrl != null && imageUrl.isNotEmpty)
-                ? Image.network(
-              imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey[850], child: const Center(child: Icon(Icons.broken_image_outlined, color: textMuted, size: 36))),
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(child: CircularProgressIndicator(value: loadingProgress.expectedTotalBytes != null ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes! : null, color: accentRed, strokeWidth: 2.0));
-              },
-            )
-                : Container(color: Colors.grey[850], child: const Center(child: Icon(Icons.image_not_supported_outlined, color: textMuted, size: 36))),
-          ),
-          Expanded(
-            flex: 5,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+    return LayoutBuilder(builder: (ctx, constraints) {
+      final w = constraints.maxWidth;
+      final imgH = w * .55;
+
+      // Atur nilai minimum agar teks tidak terlalu kecil
+      final titleFS = w * .07 < 18 ? 18.0 : w * .07;
+      final detailFS = w * .045 < 14 ? 14.0 : w * .045;
+      final btnFS = w * .045 < 14 ? 14.0 : w * .045;
+
+      return Card(
+        color: surfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            SizedBox(
+              height: imgH,
+              width: double.infinity,
+              child: img != null && img.isNotEmpty
+                  ? Image.network(
+                img,
+                fit: BoxFit.cover,
+                loadingBuilder: (c, ch, lp) => lp == null
+                    ? ch
+                    : Center(
+                  child: CircularProgressIndicator(
+                    value: lp.expectedTotalBytes != null
+                        ? lp.cumulativeBytesLoaded / lp.expectedTotalBytes!
+                        : null,
+                    color: accentRed,
+                  ),
+                ),
+                errorBuilder: (_, __, ___) => Container(
+                  color: Colors.grey[850],
+                  child: const Center(child: Icon(Icons.broken_image, color: Colors.white54, size: 36)),
+                ),
+              )
+                  : Container(color: Colors.grey[850], child: const Center(child: Icon(Icons.image_not_supported_outlined, color: textMuted, size: 36))),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: <Widget>[
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.course.courseName,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.bold,
-                          color: textPrimary,
-                          height: 1.15,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4.0),
-                      _buildDetailRow(
-                          icon: Icons.timer_outlined,
-                          label: "Durasi",
-                          value: "${widget.course.courseHour} jam"
-                      ),
-                      _buildDetailRow(
-                          icon: Icons.sell_outlined,
-                          label: "Harga",
-                          value: priceText
-                      ),
-                    ],
+                children: [
+                  Text(
+                    widget.course.courseName,
+                    style: TextStyle(fontSize: titleFS, fontWeight: FontWeight.bold, color: textPrimary),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 4),
+                  _buildDetailRow(Icons.timer_outlined, 'Durasi', '${widget.course.courseHour} jam', detailFS),
+                  _buildDetailRow(
+                    Icons.sell_outlined,
+                    'Harga',
+                    widget.course.courseType.toLowerCase() == 'free' ? 'Gratis' : 'Rp ${widget.course.coursePrice}',
+                    detailFS,
+                  ),
+                  const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerRight,
                     child: _isEnrolling
-                        ? const SizedBox(
-                      height: 20, width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.0, color: accentRed),
-                    )
+                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: accentRed))
                         : ElevatedButton(
                       onPressed: _isEnrolled ? null : _handleEnroll,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _isEnrolled ? enrolledColor : accentRed,
                         disabledBackgroundColor: enrolledColor.withOpacity(0.6),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8.0),
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        textStyle: TextStyle(fontSize: btnFS, fontWeight: FontWeight.w600),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      child: Text(
-                          _isEnrolled ? 'Enrolled' : 'Enroll',
-                          style: const TextStyle(color: textPrimary)
-                      ),
+                      child: Text(_isEnrolled ? 'Enrolled' : 'Enroll', style: const TextStyle(color: textPrimary)),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+    });
   }
 }

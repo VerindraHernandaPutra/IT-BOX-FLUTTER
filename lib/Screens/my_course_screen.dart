@@ -212,19 +212,14 @@ class _MyCourseScreenState extends State<MyCourseScreen> {
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 if (_hasCertificate(course.id))
-                                  ElevatedButton.icon(
-                                    icon: const Icon(Icons.download_rounded, size: 18),
-                                    label: const Text('Download Certificate'),
+                                  IconButton(
+                                    icon: const Icon(Icons.download_rounded),
+                                    tooltip: 'Download Certificate',
+                                    color: Colors.green,
                                     onPressed: () async {
                                       final certId = _getCertificateId(course.id);
                                       if (certId != null) await _downloadCertificate(certId);
                                     },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    ),
                                   ),
                                 const SizedBox(width: 10),
                                 ElevatedButton.icon(
