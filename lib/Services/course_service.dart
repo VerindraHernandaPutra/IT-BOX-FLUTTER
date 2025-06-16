@@ -10,7 +10,7 @@ class CourseService {
   // TODO: Make sure this URL is correct for your Laravel API backend
   // For Android Emulator connecting to localhost: 'http://10.0.2.2/your_laravel_folder/public/api'
   // Or if using `php artisan serve`: 'http://10.0.2.2:8000/api'
-  final String _apiBaseUrl = 'http://192.168.18.83:8000/api';
+  final String _apiBaseUrl = 'http://35.219.25.96:8000/api';
 
   // --- Course and Material Methods ---
 
